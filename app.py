@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_mic_recorder import speech_to_text
 
 # --------------------------------------------------
 # PAGE CONFIG
@@ -31,6 +32,13 @@ st.markdown("""
         margin-bottom: 25px;
     }
 
+    .section-title {
+        font-size: 25px;
+        font-weight: 700;
+        color: #166534;
+        margin-top: 15px;
+    }
+
     .scheme-card {
         background: white;
         padding: 22px;
@@ -58,15 +66,18 @@ st.markdown("""
         color: #E67E22;
     }
 
-    .section-title {
-        font-size: 25px;
-        font-weight: 700;
-        color: #166534;
-        margin-top: 15px;
+    .voice-box {
+        background: #FFF7ED;
+        border: 1px solid #FDBA74;
+        border-radius: 14px;
+        padding: 14px;
+        margin: 15px 0;
     }
 
-    .top-space {
-        margin-top: 20px;
+    .voice-title {
+        font-size: 17px;
+        font-weight: 700;
+        color: #C2410C;
     }
 
     div.stButton > button {
@@ -99,6 +110,7 @@ st.session_state.language = language
 # TRANSLATIONS
 # --------------------------------------------------
 if language == "Tamil":
+
     texts = {
         "title": "Scheme Discovery Assistant",
         "subtitle": "உங்களுக்கு தகுதியான அரசு திட்டங்களை எளிதாக கண்டறியுங்கள்.",
@@ -114,9 +126,15 @@ if language == "Tamil":
         "documents": "தேவையான ஆவணங்கள்",
         "download": "Checklist பதிவிறக்கம்",
         "apply": "விண்ணப்பிக்க",
-        "filter": "வடிகட்டி",
+        "voice": "🎙️ உங்கள் பதிலை பேசுங்கள்",
+        "voice_hint": "Type செய்ய முடியாதவர்கள் microphone button-ஐ அழுத்தி பதிலை சொல்லலாம்.",
+        "voice_processing": "Voice answer பெறப்படுகிறது...",
+        "voice_error": "Voice answer புரியவில்லை. மீண்டும் முயற்சிக்கவும்.",
+        "your_answer": "உங்கள் பதில்",
     }
+
 else:
+
     texts = {
         "title": "Scheme Discovery Assistant",
         "subtitle": "Find government schemes that you may be eligible for.",
@@ -132,7 +150,11 @@ else:
         "documents": "Required Documents",
         "download": "Download Checklist",
         "apply": "Apply",
-        "filter": "Filter",
+        "voice": "🎙️ Speak your answer",
+        "voice_hint": "Users who cannot type can press the microphone button and speak their answer.",
+        "voice_processing": "Processing voice answer...",
+        "voice_error": "Could not understand the voice answer. Please try again.",
+        "your_answer": "Your answer",
     }
 
 
@@ -147,7 +169,6 @@ schemes = [
         "occupation": "Farmer",
         "income": 300000,
         "need": "Agriculture",
-        "states": ["All States"],
         "documents": [
             "Aadhaar Card",
             "Bank Account Details",
@@ -166,7 +187,6 @@ schemes = [
         "occupation": "Any",
         "income": 300000,
         "need": "Cooking Gas",
-        "states": ["All States"],
         "documents": [
             "Aadhaar Card",
             "Address Proof",
@@ -185,7 +205,6 @@ schemes = [
         "occupation": "Student",
         "income": 250000,
         "need": "Education",
-        "states": ["All States"],
         "documents": [
             "Aadhaar Card",
             "Income Certificate",
@@ -205,7 +224,6 @@ schemes = [
         "occupation": "Any",
         "income": 500000,
         "need": "Healthcare",
-        "states": ["All States"],
         "documents": [
             "Aadhaar Card",
             "Identity Proof",
@@ -254,14 +272,13 @@ def home_page():
     st.info(
         "This assistant provides an initial scheme-matching guide. "
         "Always verify the latest eligibility and application details "
-        "on the official government portal."
+        "on official government portals."
     )
-
-    st.markdown("### 🔎")
 
     if st.button(texts["find"], type="primary"):
         st.session_state.page = "form"
         st.session_state.step = 0
+        st.session_state.answers = {}
         st.rerun()
 
 
@@ -269,12 +286,14 @@ def home_page():
 # QUESTIONS
 # --------------------------------------------------
 questions = [
+
     {
         "key": "age",
         "title": "What is your age?",
         "tamil": "உங்கள் வயது என்ன?",
         "type": "number"
     },
+
     {
         "key": "gender",
         "title": "What is your gender?",
@@ -282,6 +301,7 @@ questions = [
         "type": "select",
         "options": ["Male", "Female", "Other"]
     },
+
     {
         "key": "occupation",
         "title": "What is your occupation?",
@@ -296,12 +316,14 @@ questions = [
             "Other"
         ]
     },
+
     {
         "key": "income",
         "title": "What is your annual family income?",
         "tamil": "உங்கள் குடும்பத்தின் ஆண்டு வருமானம் என்ன?",
         "type": "number"
     },
+
     {
         "key": "state",
         "title": "Which state do you live in?",
@@ -317,6 +339,7 @@ questions = [
             "Other"
         ]
     },
+
     {
         "key": "category",
         "title": "What is your category?",
@@ -330,6 +353,7 @@ questions = [
             "Other"
         ]
     },
+
     {
         "key": "need",
         "title": "What support do you need?",
@@ -346,6 +370,108 @@ questions = [
         ]
     }
 ]
+
+
+# --------------------------------------------------
+# VOICE VALUE CONVERTER
+# --------------------------------------------------
+def clean_number(text):
+
+    if not text:
+        return None
+
+    text = text.lower().strip()
+
+    replacements = {
+        "zero": "0",
+        "one": "1",
+        "two": "2",
+        "three": "3",
+        "four": "4",
+        "five": "5",
+        "six": "6",
+        "seven": "7",
+        "eight": "8",
+        "nine": "9",
+        "ten": "10",
+        "twenty": "20",
+        "thirty": "30",
+        "forty": "40",
+        "fifty": "50",
+        "sixty": "60",
+        "seventy": "70",
+        "eighty": "80",
+        "ninety": "90"
+    }
+
+    for word, number in replacements.items():
+        if word in text:
+            text = text.replace(word, number)
+
+    digits = "".join(
+        character for character in text
+        if character.isdigit()
+    )
+
+    if digits:
+        return int(digits)
+
+    return None
+
+
+# --------------------------------------------------
+# VOICE MATCHING
+# --------------------------------------------------
+def match_voice_to_option(text, options):
+
+    if not text:
+        return None
+
+    text = text.lower().strip()
+
+    # Exact / partial matching
+    for option in options:
+
+        if option.lower() in text:
+            return option
+
+    # Common Tamil/English voice words
+    mappings = {
+        "student": ["student", "students", "மாணவர்", "மாணவி"],
+        "farmer": ["farmer", "farm", "விவசாயி"],
+        "employee": ["employee", "job", "வேலை"],
+        "self-employed": ["self employed", "business", "தொழில்"],
+        "unemployed": ["unemployed", "jobless", "வேலை இல்லை"],
+
+        "male": ["male", "man", "ஆண்"],
+        "female": ["female", "woman", "பெண்"],
+
+        "education": ["education", "study", "school", "college", "கல்வி"],
+        "agriculture": ["agriculture", "farmer", "விவசாயம்"],
+        "healthcare": ["health", "hospital", "medical", "மருத்துவம்"],
+        "cooking gas": ["gas", "lpg", "cooking", "சமையல் எரிவாயு"],
+        "employment": ["employment", "job", "வேலை"],
+        "housing": ["house", "housing", "home", "வீடு"],
+        "financial support": ["money", "financial", "finance", "பணம்"],
+
+        "general": ["general"],
+        "sc": ["sc"],
+        "st": ["st"],
+        "obc": ["obc"]
+    }
+
+    for option in options:
+
+        key = option.lower()
+
+        if key in mappings:
+
+            for word in mappings[key]:
+
+                if word.lower() in text:
+                    return option
+
+    return None
 
 
 # --------------------------------------------------
@@ -376,15 +502,63 @@ def form_page():
 
     key = question["key"]
 
+    # ----------------------------------------------
+    # NUMBER QUESTIONS
+    # ----------------------------------------------
     if question["type"] == "number":
 
+        current_value = st.session_state.answers.get(key, 0)
+
         value = st.number_input(
-            "Enter your answer",
+            texts["your_answer"],
             min_value=0,
             max_value=120 if key == "age" else 10000000,
-            value=st.session_state.answers.get(key, 0)
+            value=current_value,
+            key=f"number_{key}"
         )
 
+        st.markdown(
+            f"""
+            <div class="voice-box">
+                <div class="voice-title">{texts["voice"]}</div>
+                <div>{texts["voice_hint"]}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        voice_language = "ta-IN" if language == "Tamil" else "en-IN"
+
+        voice_text = speech_to_text(
+            language=voice_language,
+            start_prompt="🎙️ Start speaking",
+            stop_prompt="⏹️ Stop",
+            just_once=True,
+            key=f"voice_{key}"
+        )
+
+        if voice_text:
+
+            converted = clean_number(voice_text)
+
+            if converted is not None:
+
+                st.session_state.answers[key] = converted
+
+                st.success(
+                    f"Voice answer: {converted}"
+                )
+
+                st.rerun()
+
+            else:
+
+                st.warning(texts["voice_error"])
+
+
+    # ----------------------------------------------
+    # SELECT QUESTIONS
+    # ----------------------------------------------
     else:
 
         options = question["options"]
@@ -392,26 +566,80 @@ def form_page():
         default_index = 0
 
         if key in st.session_state.answers:
+
             try:
                 default_index = options.index(
                     st.session_state.answers[key]
                 )
+
             except ValueError:
                 default_index = 0
 
         value = st.selectbox(
-            "Select",
+            texts["your_answer"],
             options,
-            index=default_index
+            index=default_index,
+            key=f"select_{key}"
         )
+
+        # Voice option
+        st.markdown(
+            f"""
+            <div class="voice-box">
+                <div class="voice-title">{texts["voice"]}</div>
+                <div>{texts["voice_hint"]}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        voice_language = "ta-IN" if language == "Tamil" else "en-IN"
+
+        voice_text = speech_to_text(
+            language=voice_language,
+            start_prompt="🎙️ Start speaking",
+            stop_prompt="⏹️ Stop",
+            just_once=True,
+            key=f"voice_{key}"
+        )
+
+        if voice_text:
+
+            matched_option = match_voice_to_option(
+                voice_text,
+                options
+            )
+
+            if matched_option:
+
+                st.session_state.answers[key] = matched_option
+
+                st.success(
+                    f"Voice answer: {matched_option}"
+                )
+
+                st.rerun()
+
+            else:
+
+                st.warning(
+                    f'Heard: "{voice_text}" — '
+                    f"{texts['voice_error']}"
+                )
 
     st.write("")
 
+    # ----------------------------------------------
+    # NAVIGATION
+    # ----------------------------------------------
     col1, col2 = st.columns(2)
 
     with col1:
+
         if step > 0:
+
             if st.button(texts["back"]):
+
                 st.session_state.step -= 1
                 st.rerun()
 
@@ -425,12 +653,22 @@ def form_page():
 
         if st.button(button_text, type="primary"):
 
-            st.session_state.answers[key] = value
+            # Save current select/number answer
+            if question["type"] == "number":
+
+                st.session_state.answers[key] = value
+
+            else:
+
+                st.session_state.answers[key] = value
 
             if step == total - 1:
+
                 st.session_state.page = "results"
                 st.rerun()
+
             else:
+
                 st.session_state.step += 1
                 st.rerun()
 
@@ -448,6 +686,7 @@ def calculate_match(scheme):
     # Occupation
     if scheme["occupation"] == "Any":
         score += 1
+
     elif answers.get("occupation") == scheme["occupation"]:
         score += 1
 
@@ -460,6 +699,7 @@ def calculate_match(scheme):
 
     if scheme["category"] == "General":
         score += 1
+
     elif category in ["SC", "ST", "OBC"]:
         score += 1
 
@@ -470,9 +710,7 @@ def calculate_match(scheme):
     # State
     score += 1
 
-    percentage = int((score / total) * 100)
-
-    return percentage
+    return int((score / total) * 100)
 
 
 # --------------------------------------------------
@@ -485,9 +723,10 @@ def results_page():
         unsafe_allow_html=True
     )
 
-    st.write("Based on the information you provided:")
+    st.write(
+        "Based on the information you provided:"
+    )
 
-    # Filter
     filter_option = st.selectbox(
         "Filter by category",
         [
@@ -524,6 +763,7 @@ def results_page():
         st.markdown(
             f"""
             <div class="scheme-card">
+
                 <div class="scheme-title">
                     {scheme["name"]}
                 </div>
@@ -536,6 +776,7 @@ def results_page():
                     <b>{texts["benefit"]}:</b>
                     {scheme["benefit"]}
                 </div>
+
             </div>
             """,
             unsafe_allow_html=True
@@ -543,20 +784,22 @@ def results_page():
 
         st.progress(percentage / 100)
 
-        with st.expander(f"✓ {texts['why']}"):
+        with st.expander(
+            f"✓ {texts['why']}"
+        ):
 
             st.write(
-                f"✓ Your occupation: "
+                f"✓ Occupation: "
                 f"{st.session_state.answers.get('occupation', 'Not provided')}"
             )
 
             st.write(
-                f"✓ Your income: ₹"
+                f"✓ Income: ₹"
                 f"{st.session_state.answers.get('income', 0):,}"
             )
 
             st.write(
-                f"✓ Your need: "
+                f"✓ Need: "
                 f"{st.session_state.answers.get('need', 'Not provided')}"
             )
 
@@ -564,6 +807,7 @@ def results_page():
             f"{texts['details']} →",
             key="details_" + scheme["name"]
         ):
+
             st.session_state.selected_scheme = scheme
             st.session_state.page = "details"
             st.rerun()
@@ -579,6 +823,7 @@ def details_page():
     scheme = st.session_state.selected_scheme
 
     if scheme is None:
+
         st.session_state.page = "results"
         st.rerun()
 
@@ -592,23 +837,26 @@ def details_page():
         unsafe_allow_html=True
     )
 
-    st.markdown(f"### 💰 {texts['benefit']}")
+    st.markdown(
+        f"### 💰 {texts['benefit']}"
+    )
 
     st.write(scheme["benefit"])
 
-    st.markdown(f"### ✅ {texts['eligibility']}")
+    st.markdown(
+        f"### ✅ {texts['eligibility']}"
+    )
 
     for item in scheme["eligibility"]:
         st.write(f"☑️ {item}")
 
-    st.markdown(f"### 📄 {texts['documents']}")
+    st.markdown(
+        f"### 📄 {texts['documents']}"
+    )
 
     for item in scheme["documents"]:
         st.write(f"☐ {item}")
 
-    st.write("")
-
-    # Checklist text
     checklist = f"""
 {scheme["name"]} - Document Checklist
 
@@ -633,8 +881,8 @@ Required Documents:
     )
 
     st.warning(
-        "Application links and eligibility rules can change. "
-        "Please verify the scheme details on the official government website."
+        "Please verify the latest eligibility and application "
+        "information on official government websites."
     )
 
 
@@ -642,13 +890,17 @@ Required Documents:
 # PAGE ROUTING
 # --------------------------------------------------
 if st.session_state.page == "home":
+
     home_page()
 
 elif st.session_state.page == "form":
+
     form_page()
 
 elif st.session_state.page == "results":
+
     results_page()
 
 elif st.session_state.page == "details":
+
     details_page()
